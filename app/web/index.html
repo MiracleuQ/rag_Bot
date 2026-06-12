@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RAG Bot 问答测试台</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --line: #d9e0ea;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .app {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 16px;
+      display: grid;
+      gap: 12px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .topbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    .title {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    .grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .field { display: grid; gap: 6px; }
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    input, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      color: inherit;
+      background: #fff;
+    }
+    textarea {
+      min-height: 84px;
+      resize: vertical;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    button {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 6px;
+      padding: 8px 12px;
+      cursor: pointer;
+      font: inherit;
+    }
+    button.primary {
+      border-color: var(--primary);
+      background: var(--primary);
+      color: #fff;
+    }
+    button.primary:hover { background: var(--primary-hover); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+    .chat-log {
+      height: 420px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 10px;
+      display: grid;
+      gap: 10px;
+    }
+    .msg {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fff;
+    }
+    .msg .meta {
+      display: flex;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .msg pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font: inherit;
+    }
+    details {
+      margin-top: 8px;
+      border-top: 1px dashed var(--line);
+      padding-top: 8px;
+    }
+    .doc {
+      padding: 8px 0;
+      border-bottom: 1px solid #edf1f7;
+    }
+    .doc:last-child { border-bottom: none; }
+    .doc-title {
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .hint { color: var(--muted); font-size: 12px; }
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .chat-log { height: 360px; }
+    }
+  </style>
+</head>
+<body>
+<main class="app">
+  <section class="panel topbar">
+    <h1 class="title">RAG Bot 问答测试台</h1>
+    <div class="actions">
+      <button id="new-session">新会话</button>
+      <button id="clear-chat">清空窗口</button>
+    </div>
+  </section>
+
+  <section class="panel grid">
+    <div class="field">
+      <label for="api-base">API 地址</label>
+      <input id="api-base" type="text">
+    </div>
+    <div class="field">
+      <label for="session-id">Session ID</label>
+      <input id="session-id" type="text" placeholder="自动生成或接口返回">
+    </div>
+    <div class="field">
+      <label for="user-id">User ID（可选）</label>
+      <input id="user-id" type="text" placeholder="例如 u001">
+    </div>
+  </section>
+
+  <section class="panel">
+    <div id="chat-log" class="chat-log"></div>
+  </section>
+
+  <section class="panel">
+    <div class="field">
+      <label for="question">问题</label>
+      <textarea id="question" placeholder="输入问题后点击发送"></textarea>
+    </div>
+    <div class="actions" style="margin-top: 10px;">
+      <button id="send-btn" class="primary">发送</button>
+      <span class="hint" id="status">就绪</span>
+    </div>
+  </section>
+</main>
+
+<script>
+  const apiBaseInput = document.getElementById("api-base");
+  const sessionInput = document.getElementById("session-id");
+  const userInput = document.getElementById("user-id");
+  const questionInput = document.getElementById("question");
+  const sendBtn = document.getElementById("send-btn");
+  const newSessionBtn = document.getElementById("new-session");
+  const clearChatBtn = document.getElementById("clear-chat");
+  const statusNode = document.getElementById("status");
+  const chatLog = document.getElementById("chat-log");
+
+  function makeSessionId() {
+    return "web-" + Date.now() + "-" + Math.random().toString(16).slice(2, 8);
+  }
+
+  function nowTime() {
+    return new Date().toLocaleTimeString();
+  }
+
+  function uniqueDocs(docs) {
+    const list = Array.isArray(docs) ? docs : [];
+    const seen = new Set();
+    const output = [];
+    list.forEach((doc) => {
+      const source = (doc && doc.source ? String(doc.source) : "").trim();
+      const docId = (doc && doc.doc_id ? String(doc.doc_id) : "").trim();
+      const key = (source || docId || "unknown").replaceAll("\\", "/").toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      output.push({ source, doc_id: docId });
+    });
+    return output;
+  }
+
+  function createMessage(role, text, docs) {
+    const node = document.createElement("article");
+    node.className = "msg";
+
+    const meta = document.createElement("div");
+    meta.className = "meta";
+    meta.innerHTML = `<span>${role}</span><span>${nowTime()}</span>`;
+    node.appendChild(meta);
+
+    const content = document.createElement("pre");
+    content.textContent = text || "";
+    node.appendChild(content);
+
+    const docList = uniqueDocs(docs);
+    if (docList.length > 0) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = "引用文档 " + docList.length;
+      details.appendChild(summary);
+
+      docList.forEach((doc, idx) => {
+        const docNode = document.createElement("div");
+        docNode.className = "doc";
+
+        const title = document.createElement("div");
+        title.className = "doc-title";
+        title.textContent = "[" + (idx + 1) + "] " + (doc.source || doc.doc_id || "unknown");
+        docNode.appendChild(title);
+        details.appendChild(docNode);
+      });
+
+      node.appendChild(details);
+    }
+
+    return node;
+  }
+
+  function pushMessage(role, text, docs) {
+    chatLog.appendChild(createMessage(role, text, docs));
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  function setBusy(busy, label) {
+    sendBtn.disabled = busy;
+    statusNode.textContent = label;
+  }
+
+  async function sendQuestion() {
+    const question = questionInput.value.trim();
+    if (!question) {
+      statusNode.textContent = "请输入问题";
+      return;
+    }
+
+    const base = (apiBaseInput.value || window.location.origin).replace(/\/$/, "");
+    if (!sessionInput.value.trim()) {
+      sessionInput.value = makeSessionId();
+    }
+
+    const payload = {
+      question,
+      session_id: sessionInput.value.trim(),
+      user_id: userInput.value.trim() || null,
+      channel: "web"
+    };
+
+    pushMessage("用户", question);
+    questionInput.value = "";
+    setBusy(true, "请求中...");
+
+    try {
+      const resp = await fetch(base + "/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error("HTTP " + resp.status + ": " + txt);
+      }
+      const data = await resp.json();
+      if (data.session_id) {
+        sessionInput.value = data.session_id;
+      }
+      pushMessage("助手", data.answer || "", data.used_docs || []);
+      setBusy(false, "完成");
+    } catch (err) {
+      pushMessage("系统", "请求失败: " + (err && err.message ? err.message : String(err)));
+      setBusy(false, "失败");
+    }
+  }
+
+  sendBtn.addEventListener("click", sendQuestion);
+  questionInput.addEventListener("keydown", (event) => {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      sendQuestion();
+    }
+  });
+  newSessionBtn.addEventListener("click", () => {
+    sessionInput.value = makeSessionId();
+    statusNode.textContent = "已创建新会话";
+  });
+  clearChatBtn.addEventListener("click", () => {
+    chatLog.innerHTML = "";
+    statusNode.textContent = "已清空";
+  });
+
+  apiBaseInput.value = window.location.origin;
+  sessionInput.value = makeSessionId();
+  pushMessage("系统", "页面已就绪，可直接发送问题测试问答链路。");
+</script>
+</body>
+</html>

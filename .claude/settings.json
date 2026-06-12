@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(D:\\PyCharm_projects\\RAG_bot\\app\\prompts.py)",
+      "Read(D:\\PyCharm_projects\\RAG_bot\\app\\services\\langchain_rag_service.py)",
+      "Read(D:\\PyCharm_projects\\RAG_bot\\app\\config.py)",
+      "Read(D:\\PyCharm_projects\\RAG_bot\\app\\llm_client.py)",
+      "Read(D:\\PyCharm_projects\\RAG_bot\\app\\schemas.py)",
+      "Read(D:\\PyCharm_projects\\RAG_bot\\app\\security\\sensitive.py)",
+      "Edit(D:\\PyCharm_projects\\RAG_bot\\app\\prompts.py)",
+      "Edit(D:\\PyCharm_projects\\RAG_bot\\app\\services\\langchain_rag_service.py)",
+      "Edit(D:\\PyCharm_projects\\RAG_bot\\app\\config.py)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ]
+  }
+}

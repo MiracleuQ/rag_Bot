@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.env
+.venv/
+.idea/
+data/vector_store/*.jsonl
+data/vector_store/ingest_manifest.json
+data/vector_store/chroma/
+data/chat_history/*.db
