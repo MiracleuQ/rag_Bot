@@ -25,7 +25,7 @@ from app.query_rewrite.noop import NoopQueryRewriter
 from app.retrievers.base import BaseRetriever
 from app.schemas import ChatResponse, Document
 from app.security.sensitive import is_sensitive_question
-from app.services.flow_enumerator import build_flow_enumeration_answer
+from app.services.flow_enumerator import build_flow_enumeration_answer, is_flow_enumeration_question
 from app.utils import coverage_score
 
 HISTORY_REWRITE_SYSTEM_PROMPT = """你是企业知识库检索查询改写器。结合历史对话，把用户当前追问改写成可以独立检索的完整问题。
@@ -360,7 +360,7 @@ class LangChainRAGService:
 
     def _resolve_retrieval_top_k(self, question: str) -> int:
         base_top_k = max(1, int(self._top_k))
-        if _FLOW_ENUM_QUERY_HINT_RE.search(question.strip()):
+        if is_flow_enumeration_question(question):
             return max(base_top_k, 12)
         if _ENUM_QUERY_HINT_RE.search(question.strip()):
             return max(base_top_k, min(12, base_top_k * 2))

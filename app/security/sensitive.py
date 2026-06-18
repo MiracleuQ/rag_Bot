@@ -1,6 +1,6 @@
 import re
 
-SENSITIVE_KEYWORDS = {
+_SENSITIVE_KEYWORDS_RAW = {
     "身份证",
     "手机号",
     "手机号码",
@@ -28,6 +28,9 @@ def _normalize(text: str) -> str:
     result = text.translate(_FULL_WIDTH_TO_HALF)
     result = _WHITESPACE_RE.sub("", result)
     return result.lower()
+
+
+SENSITIVE_KEYWORDS = {_normalize(kw) for kw in _SENSITIVE_KEYWORDS_RAW}
 
 
 def is_sensitive_question(text: str) -> bool:

@@ -3,7 +3,9 @@ __pycache__/
 .env
 .venv/
 .idea/
-data/vector_store/*.jsonl
-data/vector_store/ingest_manifest.json
-data/vector_store/chroma/
-data/chat_history/*.db
+data/vector_store/
+data/chat_history/
+data/knowledge_base/*.pdf
+data/knowledge_base/*.docx
+data/knowledge_base/*.xlsx
+data/knowledge_base/*.doc

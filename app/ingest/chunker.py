@@ -342,7 +342,7 @@ def _split_parent_child(
         for child_text in group["children"]:
             child_global_idx += 1
             child_id = f"{doc.doc_id}-child-{child_global_idx}"
-            enriched_child = f"{prefix}\n{child_text}" if not section_heading else f"{prefix}\n{child_text}"
+            enriched_child = f"{prefix}\n{child_text}"
             chunks.append(
                 TextChunk(
                     chunk_id=child_id,

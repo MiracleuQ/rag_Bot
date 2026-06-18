@@ -1,6 +1,5 @@
 import argparse
 import logging
-import math
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -48,15 +47,6 @@ def _collect_stale_point_ids(paths: List[str], prev_docs_state: Dict[str, dict])
                 ids.append(point_id)
     # Keep order while deduping.
     return list(dict.fromkeys(ids))
-
-
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
 
 
 def _filter_near_duplicates(
@@ -179,6 +169,7 @@ def run_ingestion(
         "chunk_count": len(chunks_to_upsert),
         "delete_count": len(stale_point_ids_to_delete),
         "vector_count": 0,
+        "duplicate_count": 0,
         "dry_run": dry_run,
         "full_reindex": full_reindex,
         "incremental_enabled": settings.ingest_enable_incremental and not full_reindex,

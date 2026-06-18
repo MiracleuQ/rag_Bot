@@ -19,7 +19,7 @@ def _build_base_retriever(settings: Settings, embedder) -> BaseRetriever:
         )
 
 
-def _build_retriever_chain(settings: Settings, embedder) -> BaseRetriever:
+def _build_retriever_chain(settings: Settings, embedder, llm_client: LLMClient) -> BaseRetriever:
     retriever: BaseRetriever = _build_base_retriever(settings=settings, embedder=embedder)
 
     if settings.enable_cross_encoder_reranker:
@@ -37,7 +37,6 @@ def _build_retriever_chain(settings: Settings, embedder) -> BaseRetriever:
         )
 
     if settings.enable_crag:
-        llm_client = LLMClient(settings=settings)
         retriever = CRAGRetriever(
             base_retriever=retriever,
             llm_client=llm_client,
@@ -46,7 +45,6 @@ def _build_retriever_chain(settings: Settings, embedder) -> BaseRetriever:
         )
 
     if settings.enable_hyde:
-        llm_client = LLMClient(settings=settings)
         retriever = HyDERetriever(
             base_retriever=retriever,
             llm_client=llm_client,
@@ -71,8 +69,8 @@ def _build_query_rewriter(settings: Settings, llm_client: LLMClient):
 
 def build_rag_service(settings: Settings) -> LangChainRAGService:
     embedder = create_embedder(settings)
-    retriever = _build_retriever_chain(settings=settings, embedder=embedder)
     llm_client = LLMClient(settings=settings)
+    retriever = _build_retriever_chain(settings=settings, embedder=embedder, llm_client=llm_client)
     query_rewriter = _build_query_rewriter(settings=settings, llm_client=llm_client)
 
     return LangChainRAGService(

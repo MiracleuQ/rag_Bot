@@ -49,14 +49,15 @@ class LLMClient:
                     )
                     time.sleep(delay)
             except APIStatusError as exc:
+                last_exc = exc
                 if exc.status_code >= 500 and attempt < _MAX_RETRIES - 1:
-                    last_exc = exc
                     delay = _BASE_DELAY_SEC * (2 ** attempt)
                     logger.warning(
                         "LLM server error %d (attempt %d/%d). Retrying in %.1fs...",
                         exc.status_code, attempt + 1, _MAX_RETRIES, delay,
                     )
                     time.sleep(delay)
+                    continue
                 raise
 
         raise last_exc  # type: ignore[misc]

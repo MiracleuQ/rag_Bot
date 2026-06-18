@@ -1,17 +1,8 @@
-import math
 from typing import List
 
 from app.retrievers.base import BaseRetriever
 from app.schemas import Document
-
-
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-    if norm_a == 0 or norm_b == 0:
-        return 0.0
-    return dot / (norm_a * norm_b)
+from app.utils import cosine_similarity
 
 
 class MMRRetriever(BaseRetriever):
@@ -41,11 +32,11 @@ class MMRRetriever(BaseRetriever):
             best_score = float("-inf")
 
             for idx in remaining:
-                relevance = _cosine_similarity(query_vector, candidate_vectors[idx])
+                relevance = cosine_similarity(query_vector, candidate_vectors[idx])
 
                 if selected_indices:
                     max_sim_to_selected = max(
-                        _cosine_similarity(candidate_vectors[idx], candidate_vectors[s])
+                        cosine_similarity(candidate_vectors[idx], candidate_vectors[s])
                         for s in selected_indices
                     )
                 else:

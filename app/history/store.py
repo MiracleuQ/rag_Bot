@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import threading
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -17,13 +18,17 @@ class ChatHistoryStore:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_lock = threading.Lock()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def _connect(self):
         conn = sqlite3.connect(self._db_path, check_same_thread=False, timeout=10.0)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA foreign_keys = ON;")
         conn.execute("PRAGMA journal_mode = WAL;")
         conn.execute("PRAGMA busy_timeout = 5000;")
-        return conn
+        try:
+            yield conn
+        finally:
+            conn.close()
 
     def init_db(self) -> None:
         with self._connect() as conn:
