@@ -15,3 +15,6 @@ class BaseVectorStore(ABC):
 
     def query(self, vector: List[float], top_k: int = 1) -> List[Tuple[str, float]]:
         return []
+
+    def query_batch(self, vectors: List[List[float]], top_k: int = 1) -> List[List[Tuple[str, float]]]:
+        return [self.query(v, top_k=top_k) for v in vectors]

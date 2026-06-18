@@ -47,7 +47,9 @@ class OpenAIEmbedder(BaseEmbedder):
                 return limit if limit > 0 else None
         return None
 
-    def _embed_with_auto_batch(self, text_list: List[str]) -> List[List[float]]:
+    def _embed_with_auto_batch(self, text_list: List[str], _depth: int = 0) -> List[List[float]]:
+        if _depth > 5:
+            raise RuntimeError("Embedding auto-batch recursion depth exceeded. Check API batch limit config.")
         try:
             resp = self._client.embeddings.create(
                 model=self._settings.embedding_model,
@@ -64,7 +66,7 @@ class OpenAIEmbedder(BaseEmbedder):
             vectors: List[List[float]] = []
             for i in range(0, len(text_list), limit):
                 sub_batch = text_list[i : i + limit]
-                sub_vectors = self._embed_with_auto_batch(sub_batch)
+                sub_vectors = self._embed_with_auto_batch(sub_batch, _depth=_depth + 1)
                 vectors.extend(sub_vectors)
             return vectors
 

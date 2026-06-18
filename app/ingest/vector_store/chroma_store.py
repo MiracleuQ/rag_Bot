@@ -68,3 +68,18 @@ class ChromaVectorStore(BaseVectorStore):
             return list(zip(ids, distances))
         except Exception:
             return []
+
+    def query_batch(self, vectors: List[List[float]], top_k: int = 1) -> List[List[Tuple[str, float]]]:
+        if not vectors:
+            return []
+        try:
+            result = self._collection.query(
+                query_embeddings=vectors,
+                n_results=top_k,
+                include=["distances"],
+            )
+            all_ids = result.get("ids") or [[] for _ in vectors]
+            all_distances = result.get("distances") or [[] for _ in vectors]
+            return [list(zip(ids, dists)) for ids, dists in zip(all_ids, all_distances)]
+        except Exception:
+            return [self.query(v, top_k=top_k) for v in vectors]

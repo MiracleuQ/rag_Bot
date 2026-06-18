@@ -59,22 +59,29 @@ def _filter_near_duplicates(
 
     filtered: List[VectorPoint] = []
     skipped = 0
-    for point in points:
+
+    batch_size = 64
+    for batch_start in range(0, len(points), batch_size):
+        batch = points[batch_start: batch_start + batch_size]
         try:
-            results = store.query(vector=point.vector, top_k=1)
+            results = store.query_batch(
+                vectors=[p.vector for p in batch],
+                top_k=1,
+            )
         except Exception:
-            filtered.append(point)
+            filtered.extend(batch)
             continue
 
-        if results and len(results) > 0:
-            existing_id, distance = results[0]
-            if existing_id != point.point_id and isinstance(distance, (int, float)):
-                sim = 1.0 - distance
-                if sim >= threshold:
-                    skipped += 1
-                    logger.debug("Skipping near-duplicate chunk %s (sim=%.3f with %s)", point.point_id, sim, existing_id)
-                    continue
-        filtered.append(point)
+        for point, point_results in zip(batch, results):
+            if point_results and len(point_results) > 0:
+                existing_id, distance = point_results[0]
+                if existing_id != point.point_id and isinstance(distance, (int, float)):
+                    sim = 1.0 - distance
+                    if sim >= threshold:
+                        skipped += 1
+                        logger.debug("Skipping near-duplicate chunk %s (sim=%.3f with %s)", point.point_id, sim, existing_id)
+                        continue
+            filtered.append(point)
 
     return filtered, skipped
 

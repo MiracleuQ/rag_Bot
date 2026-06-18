@@ -112,3 +112,56 @@ class QdrantVectorStore(BaseVectorStore):
                 points_selector=self._models.PointIdsList(points=point_ids[i : i + batch_size]),
                 wait=True,
             )
+
+    def query(self, vector: List[float], top_k: int = 1) -> List[tuple]:
+        if not self._collection_exists():
+            return []
+        try:
+            if hasattr(self._client, "query_points"):
+                result = self._client.query_points(
+                    collection_name=self._collection,
+                    query=vector,
+                    limit=top_k,
+                    with_payload=False,
+                    with_vectors=False,
+                )
+                points = getattr(result, "points", None)
+                if isinstance(points, list):
+                    return [(str(getattr(p, "id", "")), float(getattr(p, "score", 0.0))) for p in points]
+            results = self._client.search(
+                collection_name=self._collection,
+                query_vector=vector,
+                limit=top_k,
+                with_payload=False,
+                with_vectors=False,
+            )
+            return [(str(getattr(r, "id", "")), float(getattr(r, "score", 0.0))) for r in results]
+        except Exception:
+            return []
+
+    def query_batch(self, vectors: List[List[float]], top_k: int = 1) -> List[List[tuple]]:
+        if not vectors:
+            return []
+        if not self._collection_exists():
+            return [[] for _ in vectors]
+        try:
+            if hasattr(self._client, "query_points_batch"):
+                from qdrant_client.models import QueryRequest
+                requests = [
+                    QueryRequest(query=v, limit=top_k, with_payload=False, with_vectors=False)
+                    for v in vectors
+                ]
+                batch_result = self._client.query_points_batch(
+                    collection_name=self._collection,
+                    requests=requests,
+                )
+                all_results = getattr(batch_result, "responses", None)
+                if isinstance(all_results, list):
+                    return [
+                        [(str(getattr(p, "id", "")), float(getattr(p, "score", 0.0)))
+                         for p in (getattr(r, "points", None) or [])]
+                        for r in all_results
+                    ]
+        except Exception:
+            pass
+        return [self.query(v, top_k=top_k) for v in vectors]

@@ -26,15 +26,21 @@ class QdrantRetriever(BaseRetriever):
         self._embedder = embedder
         self._client = QdrantClient(**client_args)
         self._collection = settings.vector_store_collection
+        self._collection_exists_cached: bool | None = None
 
     def _collection_exists(self) -> bool:
+        if self._collection_exists_cached is not None:
+            return self._collection_exists_cached
         if hasattr(self._client, "collection_exists"):
-            return bool(self._client.collection_exists(collection_name=self._collection))
-        try:
-            self._client.get_collection(collection_name=self._collection)
-            return True
-        except Exception:
-            return False
+            result = bool(self._client.collection_exists(collection_name=self._collection))
+        else:
+            try:
+                self._client.get_collection(collection_name=self._collection)
+                result = True
+            except Exception:
+                result = False
+        self._collection_exists_cached = result
+        return result
 
     def _query_points(self, query_vector: List[float], limit: int) -> List[Any]:
         if hasattr(self._client, "query_points"):

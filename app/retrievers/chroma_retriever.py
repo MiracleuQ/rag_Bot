@@ -1,6 +1,6 @@
 import re
 from pathlib import Path
-from typing import List
+from typing import List, Set
 
 from app.config import Settings
 from app.ingest.embedders import BaseEmbedder
@@ -28,9 +28,8 @@ class ChromaRetriever(BaseRetriever):
         self._settings = settings
         self._embedder = embedder
 
-    @classmethod
-    def _source_overlap_score(cls, query: str, source: str) -> float:
-        query_tokens = tokenize_for_coverage(query)
+    @staticmethod
+    def _source_overlap_score(query_tokens: Set[str], source: str) -> float:
         if not query_tokens:
             return 0.0
         source_tokens = tokenize_for_coverage(Path(source).name)
@@ -41,7 +40,7 @@ class ChromaRetriever(BaseRetriever):
 
     def _build_documents(
         self,
-        query: str,
+        query_tokens: Set[str],
         raw_docs: List[str],
         raw_metadatas: List[dict],
         raw_distances: List[float],
@@ -74,7 +73,7 @@ class ChromaRetriever(BaseRetriever):
             meta = metadata or {}
             doc_id = str(meta.get("doc_id") or f"doc-{idx}")
             source = str(meta.get("source_path") or meta.get("relative_path") or "")
-            source_overlap = self._source_overlap_score(query=query, source=source)
+            source_overlap = self._source_overlap_score(query_tokens=query_tokens, source=source)
             base_score = float(score) if isinstance(score, (int, float)) else -1.0
             final_rank = base_score + 0.20 * source_overlap
             candidates.append(
@@ -136,8 +135,10 @@ class ChromaRetriever(BaseRetriever):
         raw_metadatas = (result.get("metadatas") or [[]])[0]
         raw_distances = (result.get("distances") or [[]])[0]
 
+        query_tokens = tokenize_for_coverage(question)
+
         filtered_docs = self._build_documents(
-            query=question,
+            query_tokens=query_tokens,
             raw_docs=raw_docs,
             raw_metadatas=raw_metadatas,
             raw_distances=raw_distances,
@@ -150,7 +151,7 @@ class ChromaRetriever(BaseRetriever):
         # 距离筛选可能因阈值过严导致零结果（如知识库内容与查询语义差距大时）。
         # 此时放弃距离筛选，返回原始候选，确保至少有一些参考文档。
         return self._build_documents(
-            query=question,
+            query_tokens=query_tokens,
             raw_docs=raw_docs,
             raw_metadatas=raw_metadatas,
             raw_distances=raw_distances,

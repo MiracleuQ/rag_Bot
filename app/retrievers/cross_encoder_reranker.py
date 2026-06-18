@@ -36,8 +36,6 @@ class CrossEncoderReranker(BaseRetriever):
     def _rerank(self, query: str, docs: List[Document]) -> List[Document]:
         if not docs:
             return docs
-        if len(docs) <= self._top_n:
-            return docs
 
         self._load_model()
         pairs = [(query, doc.content[:512]) for doc in docs]
