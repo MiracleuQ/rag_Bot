@@ -1,7 +1,9 @@
 import argparse
+import logging
+import math
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from app.config import get_settings
 from app.ingest.chunker import split_document
@@ -10,6 +12,8 @@ from app.ingest.embedders import create_embedder
 from app.ingest.manifest import build_current_doc_index, load_manifest, save_manifest
 from app.ingest.models import TextChunk, VectorPoint
 from app.ingest.vector_store import create_vector_store
+
+logger = logging.getLogger(__name__)
 
 
 def _build_pdf_options() -> PDFParseOptions:
@@ -46,6 +50,45 @@ def _collect_stale_point_ids(paths: List[str], prev_docs_state: Dict[str, dict])
     return list(dict.fromkeys(ids))
 
 
+def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def _filter_near_duplicates(
+    points: List[VectorPoint],
+    store,
+    threshold: float = 0.95,
+) -> Tuple[List[VectorPoint], int]:
+    if threshold >= 1.0 or not points:
+        return points, 0
+
+    filtered: List[VectorPoint] = []
+    skipped = 0
+    for point in points:
+        try:
+            results = store.query(vector=point.vector, top_k=1)
+        except Exception:
+            filtered.append(point)
+            continue
+
+        if results and len(results) > 0:
+            existing_id, distance = results[0]
+            if existing_id != point.point_id and isinstance(distance, (int, float)):
+                sim = 1.0 - distance
+                if sim >= threshold:
+                    skipped += 1
+                    logger.debug("Skipping near-duplicate chunk %s (sim=%.3f with %s)", point.point_id, sim, existing_id)
+                    continue
+        filtered.append(point)
+
+    return filtered, skipped
+
+
 def run_ingestion(
     input_dir: str | None = None,
     dry_run: bool = False,
@@ -56,6 +99,7 @@ def run_ingestion(
     if not kb_dir.exists():
         raise FileNotFoundError(f"Knowledge base directory not found: {kb_dir}")
 
+    logger.info("Starting ingestion: kb_dir=%s dry_run=%s full_reindex=%s", kb_dir, dry_run, full_reindex)
     manifest_path = Path(settings.ingest_manifest_path)
     prev_manifest = load_manifest(manifest_path)
     prev_docs_state: Dict[str, dict] = prev_manifest.get("docs", {})
@@ -144,14 +188,13 @@ def run_ingestion(
         return result
 
     store = create_vector_store(settings)
+    total_duplicates_skipped = 0
     if chunks_to_upsert:
         embedder = create_embedder(settings)
         total_vectors = 0
         for chunk_batch in _batch(chunks_to_upsert, settings.embedding_batch_size):
             vectors = embedder.embed_texts([item.text for item in chunk_batch])
             if len(vectors) != len(chunk_batch):
-                # Embedding API 可能因超时/限流等原因静默丢失部分结果。
-                # 此时必须中止入库，否则向量与文本错位导致检索返回错误内容。
                 raise RuntimeError(
                     "Embedding result size mismatch. "
                     f"expected={len(chunk_batch)} actual={len(vectors)} "
@@ -172,9 +215,13 @@ def run_ingestion(
                 )
                 for item, vector in zip(chunk_batch, vectors)
             ]
+            dedup_threshold = getattr(settings, "embedding_dedup_threshold", 0.95)
+            points, skipped = _filter_near_duplicates(points, store, threshold=dedup_threshold)
+            total_duplicates_skipped += skipped
             store.upsert(points)
             total_vectors += len(points)
         result["vector_count"] = total_vectors
+        result["duplicate_count"] = total_duplicates_skipped
 
     if stale_point_ids_to_delete:
         store.delete_points(stale_point_ids_to_delete)
@@ -216,6 +263,12 @@ def run_ingestion(
             }
 
     save_manifest(manifest_path, docs_state=new_docs_state)
+    logger.info(
+        "Ingestion complete: docs=%d changed=%d skipped=%d removed=%d vectors=%d",
+        result["document_count"], result["changed_document_count"],
+        result["skipped_document_count"], result["removed_document_count"],
+        result["vector_count"],
+    )
     return result
 
 

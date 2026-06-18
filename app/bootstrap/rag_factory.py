@@ -2,7 +2,7 @@ from app.config import Settings
 from app.ingest.embedders import create_embedder
 from app.llm_client import LLMClient
 from app.query_rewrite import LLMQueryRewriter, NoopQueryRewriter, RuleBasedQueryRewriter
-from app.retrievers import CRAGRetriever, ChromaRetriever, MMRRetriever, QdrantRetriever
+from app.retrievers import CRAGRetriever, ChromaRetriever, CrossEncoderReranker, HyDERetriever, MMRRetriever, QdrantRetriever
 from app.retrievers.base import BaseRetriever
 from app.services import LangChainRAGService
 
@@ -22,6 +22,13 @@ def _build_base_retriever(settings: Settings, embedder) -> BaseRetriever:
 def _build_retriever_chain(settings: Settings, embedder) -> BaseRetriever:
     retriever: BaseRetriever = _build_base_retriever(settings=settings, embedder=embedder)
 
+    if settings.enable_cross_encoder_reranker:
+        retriever = CrossEncoderReranker(
+            base_retriever=retriever,
+            model_name=settings.cross_encoder_model,
+            top_n=settings.cross_encoder_top_n,
+        )
+
     if settings.enable_mmr:
         retriever = MMRRetriever(
             base_retriever=retriever,
@@ -36,6 +43,13 @@ def _build_retriever_chain(settings: Settings, embedder) -> BaseRetriever:
             llm_client=llm_client,
             max_retries=settings.crag_max_retries,
             correct_threshold=settings.crag_correct_threshold,
+        )
+
+    if settings.enable_hyde:
+        llm_client = LLMClient(settings=settings)
+        retriever = HyDERetriever(
+            base_retriever=retriever,
+            llm_client=llm_client,
         )
 
     return retriever

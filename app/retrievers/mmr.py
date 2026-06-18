@@ -65,3 +65,6 @@ class MMRRetriever(BaseRetriever):
                 remaining.remove(best_idx)
 
         return [candidates[i] for i in selected_indices]
+
+    def get_docs_by_ids(self, ids: List[str]) -> List[Document]:
+        return self._base.get_docs_by_ids(ids=ids)

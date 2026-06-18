@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -7,9 +9,17 @@ from app.config import get_settings
 from app.history import ChatHistoryStore
 from app.history.session_service import HistorySessionService
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger(__name__)
+
 
 def create_app() -> FastAPI:
     settings = get_settings()
+    logger.info("Starting %s (env=%s)", settings.app_name, settings.app_env)
 
     app = FastAPI(title=settings.app_name)
     app.add_middleware(

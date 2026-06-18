@@ -1,3 +1,4 @@
+import hmac
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
@@ -103,7 +104,9 @@ class HistorySessionService:
         caller_user_id = _normalize_optional_text(x_user_id)
         admin_token = _normalize_optional_text(x_history_admin_token)
         # Admin 可跨用户查询，绕过归属校验；普通用户只能查自己的会话。
-        is_admin = bool(self._settings.history_admin_token) and admin_token == self._settings.history_admin_token
+        is_admin = bool(self._settings.history_admin_token) and bool(admin_token) and hmac.compare_digest(
+            admin_token, self._settings.history_admin_token
+        )
 
         if not self._settings.history_enforce_user_scope or is_admin:
             return requested_user_id
@@ -131,7 +134,9 @@ class HistorySessionService:
 
         caller_user_id = _normalize_optional_text(x_user_id)
         admin_token = _normalize_optional_text(x_history_admin_token)
-        is_admin = bool(self._settings.history_admin_token) and admin_token == self._settings.history_admin_token
+        is_admin = bool(self._settings.history_admin_token) and bool(admin_token) and hmac.compare_digest(
+            admin_token, self._settings.history_admin_token
+        )
         if not self._settings.history_enforce_user_scope or is_admin:
             return
 

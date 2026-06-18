@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 from app.config import Settings
 from app.ingest.models import VectorPoint
@@ -55,3 +55,16 @@ class ChromaVectorStore(BaseVectorStore):
         batch_size = 200
         for i in range(0, len(point_ids), batch_size):
             self._collection.delete(ids=point_ids[i : i + batch_size])
+
+    def query(self, vector: List[float], top_k: int = 1) -> List[Tuple[str, float]]:
+        try:
+            result = self._collection.query(
+                query_embeddings=[vector],
+                n_results=top_k,
+                include=["distances"],
+            )
+            ids = (result.get("ids") or [[]])[0]
+            distances = (result.get("distances") or [[]])[0]
+            return list(zip(ids, distances))
+        except Exception:
+            return []

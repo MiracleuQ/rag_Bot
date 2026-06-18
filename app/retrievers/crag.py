@@ -130,3 +130,6 @@ class CRAGRetriever(BaseRetriever):
             best_docs = self._base.retrieve(query=query, top_k=top_k)
 
         return best_docs
+
+    def get_docs_by_ids(self, ids: List[str]) -> List[Document]:
+        return self._base.get_docs_by_ids(ids=ids)

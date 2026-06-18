@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional, Tuple
 
 from app.ingest.models import VectorPoint
 
@@ -12,3 +12,6 @@ class BaseVectorStore(ABC):
     @abstractmethod
     def delete_points(self, point_ids: List[str]) -> None:
         raise NotImplementedError
+
+    def query(self, vector: List[float], top_k: int = 1) -> List[Tuple[str, float]]:
+        return []

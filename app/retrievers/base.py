@@ -8,3 +8,6 @@ class BaseRetriever(ABC):
     @abstractmethod
     def retrieve(self, query: str, top_k: int = 3) -> List[Document]:
         raise NotImplementedError
+
+    def get_docs_by_ids(self, ids: List[str]) -> List[Document]:
+        return []

@@ -6,8 +6,7 @@ from app.config import Settings
 from app.ingest.embedders import BaseEmbedder
 from app.retrievers.base import BaseRetriever
 from app.schemas import Document
-
-_TOKEN_RE = re.compile(r"[a-z0-9_]+")
+from app.utils import tokenize_for_coverage
 
 
 class ChromaRetriever(BaseRetriever):
@@ -29,25 +28,12 @@ class ChromaRetriever(BaseRetriever):
         self._settings = settings
         self._embedder = embedder
 
-    @staticmethod
-    def _tokenize_for_overlap(text: str) -> set[str]:
-        normalized = str(text or "").lower().strip()
-        if not normalized:
-            return set()
-        tokens = set(_TOKEN_RE.findall(normalized))
-        chinese_chars = [ch for ch in normalized if "\u4e00" <= ch <= "\u9fff"]
-        if len(chinese_chars) == 1:
-            tokens.add(chinese_chars[0])
-        for idx in range(0, max(len(chinese_chars) - 1, 0)):
-            tokens.add("".join(chinese_chars[idx : idx + 2]))
-        return {token for token in tokens if token}
-
     @classmethod
     def _source_overlap_score(cls, query: str, source: str) -> float:
-        query_tokens = cls._tokenize_for_overlap(query)
+        query_tokens = tokenize_for_coverage(query)
         if not query_tokens:
             return 0.0
-        source_tokens = cls._tokenize_for_overlap(Path(source).name)
+        source_tokens = tokenize_for_coverage(Path(source).name)
         if not source_tokens:
             return 0.0
         hit_count = len(query_tokens.intersection(source_tokens))
@@ -171,3 +157,21 @@ class ChromaRetriever(BaseRetriever):
             limit=limit,
             apply_distance_filter=False,
         )
+
+    def get_docs_by_ids(self, ids: List[str]) -> List[Document]:
+        if not ids:
+            return []
+        try:
+            result = self._collection.get(ids=ids, include=["documents", "metadatas"])
+        except Exception:
+            return []
+        docs: List[Document] = []
+        raw_ids = result.get("ids", [])
+        raw_docs = result.get("documents", [])
+        raw_metas = result.get("metadatas", [])
+        for idx, pid in enumerate(raw_ids):
+            content = str(raw_docs[idx] if idx < len(raw_docs) else "").strip()
+            meta = raw_metas[idx] if idx < len(raw_metas) else {}
+            source = str(meta.get("source_path", "")) if meta else ""
+            docs.append(Document(doc_id=pid, content=content, source=source, score=None))
+        return docs

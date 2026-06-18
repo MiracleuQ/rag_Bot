@@ -2,6 +2,7 @@ import re
 import threading
 import time
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, List, Mapping, Sequence, Set, Tuple
 
@@ -24,6 +25,8 @@ from app.query_rewrite.noop import NoopQueryRewriter
 from app.retrievers.base import BaseRetriever
 from app.schemas import ChatResponse, Document
 from app.security.sensitive import is_sensitive_question
+from app.services.flow_enumerator import build_flow_enumeration_answer
+from app.utils import coverage_score
 
 HISTORY_REWRITE_SYSTEM_PROMPT = """你是企业知识库检索查询改写器。结合历史对话，把用户当前追问改写成可以独立检索的完整问题。
 要求：
@@ -35,15 +38,9 @@ _HISTORY_REWRITE_PREFIX_RE = re.compile(r"^(改写后|改写问题|检索问题|
 _FOLLOW_UP_HINT_RE = re.compile(
     r"(\u8fd9\u4e2a|\u90a3\u4e2a|\u4e0a\u4e00\u6b65|\u4e0b\u4e00\u6b65|\u7ee7\u7eed|\u7136\u540e|\u521a\u624d|\u4e0a\u9762|\u4e0a\u8ff0|\u5982\u4f55|\u7b2c\u4e8c\u6b65|\u7b2c\u4e09\u6b65)"
 )
-_TOKEN_RE = re.compile(r"[a-z0-9_]+")
 _ENUM_QUERY_HINT_RE = re.compile(
     r"(\u6709\u54ea|\u54ea\u4e9b|\u6709\u4ec0\u4e48|\u5168\u90e8|\u6240\u6709|\u5b8c\u6574|\u6e05\u5355|\u5217\u8868|\u5217\u51fa|\u76f8\u5173\u6d41\u7a0b)"
 )
-_FLOW_ENUM_QUERY_HINT_RE = re.compile(
-    r"(\u76f8\u5173\u6d41\u7a0b|\u6d41\u7a0b.*(\u6709\u54ea|\u5305\u62ec|\u5217\u51fa)|\u6709\u54ea.*\u6d41\u7a0b)"
-)
-_FLOW_HEADING_RE = re.compile(r"(?<![\d.])(\d+\.\d+)(?!\.\d)\s*([^\n]{1,80})")
-_FLOW_SUB_HEADING_RE = re.compile(r"(?<![\d.])(\d+\.\d+\.\d+)(?!\.\d)\s*([^\n]{1,120})")
 
 
 class _SessionQueryRewriteCache:
@@ -198,30 +195,6 @@ def _latest_user_message(history_messages: Sequence[Mapping[str, str]]) -> str:
     return ""
 
 
-def _tokenize_for_coverage(text: str) -> Set[str]:
-    normalized = text.lower().strip()
-    if not normalized:
-        return set()
-    tokens = set(_TOKEN_RE.findall(normalized))
-    chinese_chars = [ch for ch in normalized if "\u4e00" <= ch <= "\u9fff"]
-    if len(chinese_chars) == 1:
-        tokens.add(chinese_chars[0])
-    for idx in range(0, max(len(chinese_chars) - 1, 0)):
-        tokens.add("".join(chinese_chars[idx : idx + 2]))
-    return {token for token in tokens if token}
-
-
-def _coverage_score(query: str, docs: Sequence[Document]) -> float:
-    query_tokens = _tokenize_for_coverage(query)
-    if not query_tokens:
-        return 0.0
-    merged_text = " ".join(doc.content for doc in docs[:3] if doc.content)
-    if not merged_text.strip():
-        return 0.0
-    hit_count = len(query_tokens.intersection(_tokenize_for_coverage(merged_text)))
-    return hit_count / max(1, len(query_tokens))
-
-
 class LangChainRAGService:
     def __init__(
         self,
@@ -268,6 +241,27 @@ class LangChainRAGService:
             | RunnableLambda(self._invoke_llm_from_prompt)
         )
 
+        self._structured_chains: dict[str, Any] = {}
+        for fmt in (OutputFormat.TABLE, OutputFormat.LIST):
+            fmt_prompt = ChatPromptTemplate.from_messages(
+                [
+                    ("system", get_system_prompt(fmt)),
+                    ("human", "{retrieval_prompt}"),
+                ]
+            )
+            self._structured_chains[fmt] = (
+                RunnableLambda(
+                    lambda x: {
+                        "retrieval_prompt": build_user_prompt(
+                            question=x["question"],
+                            context=x["context"],
+                        )
+                    }
+                )
+                | fmt_prompt
+                | RunnableLambda(self._invoke_llm_from_prompt)
+            )
+
     def _resolve_parent_chunks(self, docs: List[Document]) -> List[Document]:
         parent_ids: List[str] = []
         seen_parents: set[str] = set()
@@ -284,27 +278,7 @@ class LangChainRAGService:
         if not parent_ids:
             return docs
 
-        try:
-            all_results = self._retriever._collection.get(
-                ids=parent_ids,
-                include=["documents", "metadatas"],
-            )
-        except Exception:
-            return docs
-
-        parent_docs: List[Document] = []
-        raw_ids = all_results.get("ids", [])
-        raw_docs = all_results.get("documents", [])
-        raw_metas = all_results.get("metadatas", [])
-
-        for idx, pid in enumerate(raw_ids):
-            content = str(raw_docs[idx] if idx < len(raw_docs) else "").strip()
-            meta = raw_metas[idx] if idx < len(raw_metas) else {}
-            source = str(meta.get("source_path", "")) if meta else ""
-            parent_docs.append(
-                Document(doc_id=pid, content=content, source=source, score=None)
-            )
-
+        parent_docs = self._retriever.get_docs_by_ids(ids=parent_ids)
         return parent_docs if parent_docs else docs
 
     def _build_structured_answer(
@@ -313,28 +287,11 @@ class LangChainRAGService:
         if output_format == OutputFormat.DEFAULT:
             return ""
 
+        chain = self._structured_chains.get(output_format)
+        if chain is None:
+            return ""
+
         context = _format_context(docs)
-        system_prompt = get_system_prompt(output_format)
-
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", system_prompt),
-                ("human", "{retrieval_prompt}"),
-            ]
-        )
-        chain = (
-            RunnableLambda(
-                lambda x: {
-                    "retrieval_prompt": build_user_prompt(
-                        question=x["question"],
-                        context=x["context"],
-                    )
-                }
-            )
-            | prompt
-            | RunnableLambda(self._invoke_llm_from_prompt)
-        )
-
         try:
             return chain.invoke({"question": question, "context": context}).strip()
         except Exception:
@@ -419,7 +376,8 @@ class LangChainRAGService:
         scores = [float(doc.score) for doc in docs if isinstance(doc.score, (int, float))]
         max_score = max(scores) if scores else float("-inf")
         avg_score = (sum(scores) / len(scores)) if scores else float("-inf")
-        coverage = _coverage_score(query, docs)
+        merged_text = " ".join(doc.content for doc in docs[:3] if doc.content)
+        coverage = coverage_score(query, merged_text)
         return (len(docs), max_score, coverage, avg_score)
 
     def _retrieve_best_docs(
@@ -438,239 +396,50 @@ class LangChainRAGService:
             seen_queries.add(query)
             candidates.append(query)
 
-        best_docs: List[Document] = []
-        best_rank = (0, float("-inf"), 0.0, float("-inf"))
-        for query in candidates:
-            docs = self._retrieve_docs_by_query(query, top_k=retrieval_top_k)
-            rank = self._rank_retrieval(query, docs)
-            if rank > best_rank:
-                best_rank = rank
-                best_docs = docs
-        return best_docs
+        if len(candidates) <= 1:
+            query = candidates[0] if candidates else ""
+            return self._retrieve_docs_by_query(query, top_k=retrieval_top_k) if query else []
 
-    @staticmethod
-    def _load_source_text_for_flow(source_path: str) -> str:
-        path = Path(str(source_path or "")).expanduser()
-        if not path.exists() or not path.is_file():
-            return ""
+        all_results: List[Tuple[str, List[Document]]] = []
+        with ThreadPoolExecutor(max_workers=min(len(candidates), 3)) as executor:
+            future_to_query = {
+                executor.submit(self._retrieve_docs_by_query, query, retrieval_top_k): query
+                for query in candidates
+            }
+            for future in as_completed(future_to_query):
+                query = future_to_query[future]
+                try:
+                    docs = future.result()
+                except Exception:
+                    docs = []
+                if docs:
+                    all_results.append((query, docs))
 
-        suffix = path.suffix.lower()
-        try:
-            if suffix == ".pdf":
-                from pypdf import PdfReader
-
-                reader = PdfReader(str(path))
-                pages = [(page.extract_text() or "").strip() for page in reader.pages]
-                return "\n".join(text for text in pages if text)
-            if suffix in {".txt", ".md", ".csv", ".log", ".json"}:
-                return path.read_text(encoding="utf-8", errors="ignore")
-        except Exception:
-            return ""
-        return ""
-
-    @staticmethod
-    def _is_flow_enumeration_question(question: str) -> bool:
-        return bool(_FLOW_ENUM_QUERY_HINT_RE.search(question.strip()))
-
-    @staticmethod
-    def _flow_code_key(code: str) -> tuple[int, ...]:
-        parts = []
-        for seg in code.split("."):
-            try:
-                parts.append(int(seg))
-            except ValueError:
-                parts.append(9999)
-        return tuple(parts)
-
-    @staticmethod
-    def _clean_heading_title(text: str) -> str:
-        return re.sub(r"\s+", " ", str(text or "").strip(" ：:;；。 \t\r\n")).strip()
-
-    @staticmethod
-    def _clean_detail_text(text: str, max_len: int = 48) -> str:
-        normalized = re.sub(r"\s+", " ", str(text or "")).strip()
-        normalized = re.sub(
-            r"(\[Page\s*\d+\]|\u6587\u4ef6\u7f16\u53f7\s*WI-[A-Z]{2}-\d+|\u4fee\u6539\u7248\u6b21.*?\u9875)",
-            " ",
-            normalized,
-            flags=re.IGNORECASE,
-        )
-        normalized = re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", normalized)
-        normalized = re.sub(r"\s+", " ", normalized).strip(" ：:;；。 \t\r\n")
-        if len(normalized) > max_len:
-            normalized = normalized[:max_len].rstrip(" ，,;；")
-        return normalized
-
-    @staticmethod
-    def _shorten_clause(text: str, target_len: int = 22, max_len: int = 40) -> str:
-        content = str(text or "").strip()
-        if not content:
-            return ""
-
-        first_sentence = re.split(r"[。；;]", content)[0].strip()
-        comma_parts = [p.strip() for p in re.split(r"[，,]", first_sentence) if p.strip()]
-        if not comma_parts:
-            candidate = first_sentence
-        else:
-            candidate = comma_parts[0]
-            for part in comma_parts[1:]:
-                if len(candidate) >= target_len:
-                    break
-                trial = f"{candidate}，{part}"
-                if len(trial) > max_len:
-                    break
-                candidate = trial
-        if len(candidate) > max_len:
-            candidate = candidate[:max_len]
-        return candidate.strip(" ：:;；。 \t\r\n")
-
-    @staticmethod
-    def _extract_flow_details(section_text: str, major_code: str) -> List[str]:
-        if not section_text.strip():
+        if not all_results:
             return []
 
-        details: List[str] = []
-        seen = set()
-        sub_matches = list(_FLOW_SUB_HEADING_RE.finditer(section_text))
-        for idx, sub_match in enumerate(sub_matches):
-            sub_code = sub_match.group(1).strip()
-            if not sub_code.startswith(f"{major_code}."):
-                continue
+        if len(all_results) == 1:
+            return all_results[0][1]
 
-            next_start = len(section_text)
-            for follow in sub_matches[idx + 1 :]:
-                next_start = follow.start()
-                break
-
-            block = section_text[sub_match.start() : next_start]
-            block = re.sub(rf"^\s*{re.escape(sub_code)}\s*", "", block.strip())
-            sub_title = LangChainRAGService._clean_heading_title(sub_match.group(2))
-            sub_title = re.split(r"(?<![\d.])\d+\.\d+\.\d+(?!\.\d)", sub_title, maxsplit=1)[0]
-            if not sub_title:
-                sentence = re.split(r"[。；;]", block)[0]
-                sub_title = sentence
-            sub_title = LangChainRAGService._clean_detail_text(sub_title, max_len=96)
-            for sep in ("，", ",", "：", ":"):
-                if sep in sub_title:
-                    prefix = sub_title.split(sep, 1)[0].strip()
-                    if len(prefix) >= 10:
-                        sub_title = prefix
-                    break
-            sub_title = LangChainRAGService._clean_detail_text(sub_title, max_len=96)
-            sub_title = LangChainRAGService._shorten_clause(sub_title, target_len=22, max_len=40)
-            if not sub_title or sub_title in seen:
-                continue
-            seen.add(sub_title)
-            details.append(sub_title)
-            if len(details) >= 2:
-                return details
-
-        normalized = re.sub(r"\s+", " ", section_text).strip()
-        reference_match = re.search(r"(详见《[^》]+》)", normalized)
-        if reference_match:
-            ref = LangChainRAGService._clean_detail_text(reference_match.group(1), max_len=30)
-            if ref and ref not in seen:
-                details.append(ref)
-                return details
-        for sentence in re.split(r"[。；;]", normalized):
-            clean = LangChainRAGService._clean_detail_text(sentence, max_len=96)
-            clean = LangChainRAGService._shorten_clause(clean, target_len=22, max_len=40)
-            if len(clean) < 8:
-                continue
-            if clean in seen:
-                continue
-            seen.add(clean)
-            details.append(clean)
-            if len(details) >= 2:
-                break
-        return details
+        return self._rrf_fusion(all_results, top_k=retrieval_top_k)
 
     @staticmethod
-    def _build_flow_enumeration_answer(question: str, docs: Sequence[Document]) -> str:
-        if not docs or not LangChainRAGService._is_flow_enumeration_question(question):
-            return ""
+    def _rrf_fusion(
+        all_results: List[Tuple[str, List[Document]]],
+        top_k: int,
+        k: int = 60,
+    ) -> List[Document]:
+        rrf_scores: dict[str, float] = {}
+        doc_map: dict[str, Document] = {}
+        for _, docs in all_results:
+            for rank, doc in enumerate(docs):
+                key = f"{doc.doc_id}|{doc.content[:100]}"
+                rrf_scores[key] = rrf_scores.get(key, 0.0) + 1.0 / (k + rank + 1)
+                if key not in doc_map:
+                    doc_map[key] = doc
 
-        by_source: OrderedDict[str, List[Document]] = OrderedDict()
-        for doc in docs:
-            source = (doc.source or "").strip()
-            if not source:
-                continue
-            by_source.setdefault(source, []).append(doc)
-        if not by_source:
-            return ""
-
-        dominant_source = sorted(
-            by_source.items(),
-            key=lambda item: (
-                len(item[1]),
-                max(
-                    [float(d.score) for d in item[1] if isinstance(d.score, (int, float))]
-                    or [float("-inf")]
-                ),
-            ),
-            reverse=True,
-        )[0][0]
-
-        merged_text = "\n".join(doc.content for doc in by_source[dominant_source] if doc.content.strip())
-        source_text = LangChainRAGService._load_source_text_for_flow(dominant_source)
-        heading_source_text = source_text.strip() or merged_text.strip()
-        if not heading_source_text:
-            return ""
-
-        heading_matches = []
-        for match in _FLOW_HEADING_RE.finditer(heading_source_text):
-            code = match.group(1).strip()
-            title = LangChainRAGService._clean_heading_title(match.group(2))
-            if not code or not title:
-                continue
-            if not code.startswith("4."):
-                continue
-            heading_matches.append(
-                {
-                    "code": code,
-                    "title": title,
-                    "start": match.start(),
-                    "end": match.end(),
-                }
-            )
-        if not heading_matches:
-            return ""
-
-        # 按流程编码去重，优先保留更短更像标题的文本。
-        heading_map: OrderedDict[str, dict] = OrderedDict()
-        for item in heading_matches:
-            existed = heading_map.get(item["code"])
-            if not existed or len(str(item["title"])) < len(str(existed["title"])):
-                heading_map[item["code"]] = item
-
-        flow_items = sorted(
-            [(code, data["title"]) for code, data in heading_map.items()],
-            key=lambda x: LangChainRAGService._flow_code_key(x[0]),
-        )
-        if len(flow_items) < 3:
-            return ""
-
-        heading_by_code = {code: heading_map[code] for code, _ in flow_items if code in heading_map}
-        source_title = Path(dominant_source).stem or dominant_source
-        lines = [f"根据《{source_title}》，相关流程包括：", ""]
-        for idx, (code, title) in enumerate(flow_items):
-            current = heading_by_code.get(code)
-            if not current:
-                lines.append(f"- {title}")
-                continue
-            next_start = len(heading_source_text)
-            for follow_code, _ in flow_items[idx + 1 :]:
-                follow = heading_by_code.get(follow_code)
-                if follow and isinstance(follow.get("start"), int):
-                    next_start = int(follow["start"])
-                    break
-            section_text = heading_source_text[int(current["end"]) : next_start]
-            details = LangChainRAGService._extract_flow_details(section_text=section_text, major_code=code)
-            if details:
-                lines.append(f"- {title}：{details[0]}；{details[1]}" if len(details) > 1 else f"- {title}：{details[0]}")
-            else:
-                lines.append(f"- {title}")
-        return "\n".join(lines).strip()
+        sorted_keys = sorted(rrf_scores.keys(), key=lambda k: rrf_scores[k], reverse=True)
+        return [doc_map[key] for key in sorted_keys[:top_k]]
 
     def answer(
         self,
@@ -711,7 +480,7 @@ class LangChainRAGService:
         docs = self._resolve_parent_chunks(docs)
 
         citation_docs = _to_doc_level_citations(docs)
-        flow_answer = self._build_flow_enumeration_answer(
+        flow_answer = build_flow_enumeration_answer(
             question=standalone_question,
             docs=docs,
         )

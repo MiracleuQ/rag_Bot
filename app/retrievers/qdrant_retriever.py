@@ -121,3 +121,24 @@ class QdrantRetriever(BaseRetriever):
             limit=limit,
             apply_distance_filter=False,
         )
+
+    def get_docs_by_ids(self, ids: List[str]) -> List[Document]:
+        if not ids:
+            return []
+        try:
+            points = self._client.retrieve(
+                collection_name=self._collection,
+                ids=ids,
+                with_payload=True,
+                with_vectors=False,
+            )
+        except Exception:
+            return []
+        docs: List[Document] = []
+        for point in points:
+            payload = dict(getattr(point, "payload", {}) or {})
+            content = str(payload.get("text", "")).strip()
+            doc_id = str(payload.get("doc_id", ""))
+            source = str(payload.get("source_path", ""))
+            docs.append(Document(doc_id=doc_id, content=content, source=source, score=None))
+        return docs

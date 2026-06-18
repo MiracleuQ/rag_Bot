@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 from typing import List
 
 from app.ingest.models import SourceDocument, TextChunk
@@ -15,6 +16,27 @@ HEADING_PATTERNS = (
 
 def _normalize_text(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
+def _extract_doc_title(doc: SourceDocument) -> str:
+    filename = doc.metadata.get("filename", "")
+    if not filename:
+        filename = Path(doc.path).stem
+    title = re.sub(r"^WI-[A-Z]{2}-\d+\s*", "", filename)
+    title = re.sub(r"\.(pdf|docx?|xlsx?|txt|md)$", "", title, flags=re.IGNORECASE)
+    return title.strip() or filename
+
+
+def _extract_section_heading(chunk_text: str) -> str:
+    lines = chunk_text.strip().split("\n")
+    for line in lines[:3]:
+        line = line.strip()
+        if _is_heading(line):
+            cleaned = re.sub(r"\s+", " ", line).strip(" ：:;；。 \t\r\n")
+            if len(cleaned) > 60:
+                cleaned = cleaned[:60]
+            return cleaned
+    return ""
 
 
 def _is_heading(line: str) -> bool:
@@ -218,6 +240,8 @@ def split_document(
     if not text:
         return []
 
+    doc_title = _extract_doc_title(doc)
+
     if mode == "parent_child":
         return _split_parent_child(
             doc=doc,
@@ -225,6 +249,7 @@ def split_document(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             parent_chunk_size=parent_chunk_size,
+            doc_title=doc_title,
         )
 
     if mode == "sliding":
@@ -241,11 +266,17 @@ def split_document(
         end = start + len(chunk_text)
         search_from = end
 
+        section_heading = _extract_section_heading(chunk_text)
+        prefix = f"[文档: {doc_title}]"
+        if section_heading:
+            prefix += f"\n[章节: {section_heading}]"
+        enriched_text = f"{prefix}\n{chunk_text}"
+
         chunks.append(
             TextChunk(
                 chunk_id=f"{doc.doc_id}-chunk-{idx}",
                 doc_id=doc.doc_id,
-                text=chunk_text,
+                text=enriched_text,
                 metadata={
                     "source_path": doc.path,
                     "relative_path": doc.metadata.get("relative_path", doc.path),
@@ -253,6 +284,8 @@ def split_document(
                     "start": str(start),
                     "end": str(end),
                     "chunk_mode": mode,
+                    "doc_title": doc_title,
+                    "section_heading": section_heading,
                 },
             )
         )
@@ -265,6 +298,7 @@ def _split_parent_child(
     chunk_size: int,
     chunk_overlap: int,
     parent_chunk_size: int,
+    doc_title: str = "",
 ) -> List[TextChunk]:
     pc_groups = _parent_child_split(
         text=text,
@@ -280,18 +314,27 @@ def _split_parent_child(
     for group in pc_groups:
         parent_idx += 1
         parent_id = f"{doc.doc_id}-parent-{parent_idx}"
+        parent_text = group["parent"]
+        section_heading = _extract_section_heading(parent_text)
+
+        prefix = f"[文档: {doc_title}]"
+        if section_heading:
+            prefix += f"\n[章节: {section_heading}]"
+        enriched_parent = f"{prefix}\n{parent_text}"
 
         chunks.append(
             TextChunk(
                 chunk_id=parent_id,
                 doc_id=doc.doc_id,
-                text=group["parent"],
+                text=enriched_parent,
                 metadata={
                     "source_path": doc.path,
                     "relative_path": doc.metadata.get("relative_path", doc.path),
                     "chunk_index": str(parent_idx),
                     "chunk_mode": "parent_child",
                     "chunk_level": "parent",
+                    "doc_title": doc_title,
+                    "section_heading": section_heading,
                 },
             )
         )
@@ -299,11 +342,12 @@ def _split_parent_child(
         for child_text in group["children"]:
             child_global_idx += 1
             child_id = f"{doc.doc_id}-child-{child_global_idx}"
+            enriched_child = f"{prefix}\n{child_text}" if not section_heading else f"{prefix}\n{child_text}"
             chunks.append(
                 TextChunk(
                     chunk_id=child_id,
                     doc_id=doc.doc_id,
-                    text=child_text,
+                    text=enriched_child,
                     metadata={
                         "source_path": doc.path,
                         "relative_path": doc.metadata.get("relative_path", doc.path),
@@ -311,6 +355,8 @@ def _split_parent_child(
                         "chunk_mode": "parent_child",
                         "chunk_level": "child",
                         "parent_chunk_id": parent_id,
+                        "doc_title": doc_title,
+                        "section_heading": section_heading,
                     },
                 )
             )

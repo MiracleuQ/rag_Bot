@@ -66,6 +66,14 @@ class Settings(BaseSettings):
     crag_max_retries: int = 1
     crag_correct_threshold: float = 0.5
 
+    enable_cross_encoder_reranker: bool = False
+    cross_encoder_model: str = "BAAI/bge-reranker-v2-m3"
+    cross_encoder_top_n: int = 5
+
+    enable_hyde: bool = False
+
+    embedding_dedup_threshold: float = 0.95
+
     enable_structured_output: bool = True
 
     embedding_provider: str = "openai"  # openai
