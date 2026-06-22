@@ -3,10 +3,20 @@ __pycache__/
 .env
 .venv/
 .idea/
+.vscode/
+*.egg-info/
+.pytest_cache/
+
+# Data directories - never commit knowledge base data
 data/vector_store/
 data/chat_history/
 data/manifest.json
-data/knowledge_base/*.pdf
-data/knowledge_base/*.docx
-data/knowledge_base/*.xlsx
-data/knowledge_base/*.doc
+data/knowledge_base/*
+!data/knowledge_base/.gitkeep
+
+# Evaluation results
+eval/results.json
+eval/*.log
+
+# Qdrant storage
+qdrant_storage/
