@@ -5,6 +5,7 @@ __pycache__/
 .idea/
 data/vector_store/
 data/chat_history/
+data/manifest.json
 data/knowledge_base/*.pdf
 data/knowledge_base/*.docx
 data/knowledge_base/*.xlsx
