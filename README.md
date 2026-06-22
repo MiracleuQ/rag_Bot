@@ -13,25 +13,56 @@
 
 开箱即用的企业知识库 RAG 服务，支持多格式文档导入、语义检索、多轮对话。
 
+[快速开始](#快速开始) · [API 文档](#api-接口) · [架构设计](#架构概览) · [高级功能](#高级-rag-功能)
+
 </div>
 
 ---
 
 ## 功能特性
 
-| 模块 | 说明 |
-|:---:|:---|
-| **多格式解析** | PDF / DOCX / XLSX / MD / TXT / CSV / JSON，PDF 支持 OCR 兜底 |
-| **智能分块** | 混合分块 / 滑动窗口 / 父子分块，自动注入文档标题和章节上下文 |
-| **双路检索** | ChromaDB / Qdrant 可切换，支持 Embedding 去重 |
-| **高级 RAG** | HyDE / CRAG / MMR / Cross-Encoder 精排 / RRF 多路融合 |
-| **会话管理** | SQLite 持久化，支持多轮对话历史 |
-| **查询改写** | 规则 / LLM / Noop 三种模式，带 TTL 缓存 |
-| **安全过滤** | 敏感词归一化匹配，防止信息泄露 |
-| **RBAC 权限** | admin / editor / viewer 三角色权限控制 |
-| **租户隔离** | 向量库 + 会话数据按 tenant_id 隔离 |
-| **RAG 评估** | 25 条 QA 评估集，计算关键词覆盖 + 上下文相关度 |
-| **Web 界面** | 深色主题聊天 UI，支持 Markdown 渲染 |
+<table>
+  <tr>
+    <td width="50%">
+
+**核心能力**
+- 多格式解析：PDF / DOCX / XLSX / MD / TXT / CSV / JSON
+- PDF OCR 降级：PyPDF + Tesseract 双通道，文本不足自动兜底
+- 智能分块：Hybrid / Sliding Window / Parent-Child 三模式
+- 双路检索：ChromaDB / Qdrant 可切换，Embedding 去重
+
+    </td>
+    <td width="50%">
+
+**高级 RAG**
+- HyDE：假设文档嵌入，弥合口语与文档词汇鸿沟
+- CRAG：矫正式检索，自动过滤低质量结果
+- MMR：多样性过滤，避免结果同质化
+- Cross-Encoder：bge-reranker 精排，MRR 提升 10-25%
+
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+
+**企业级特性**
+- RBAC 权限：admin / editor / viewer 三角色控制
+- 租户隔离：向量库前缀 + DB 列，零代码侵入
+- 安全过滤：敏感词归一化 + hmac 防时序攻击
+- 多轮历史：SQLite 持久化，上下文感知
+
+    </td>
+    <td width="50%">
+
+**工程化**
+- 增量入库：manifest + SHA256，变更检测 O(1)
+- RRF 融合：三路查询分数融合排序
+- TTL 缓存：查询改写结果缓存，避免重复调用
+- RAG 评估：25 条 QA 集 + 自动化评估脚本
+
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -40,36 +71,16 @@
 ### 方式一：本地启动
 
 ```bash
-# 1. 安装依赖
 pip install -r requirements.txt
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入你的 API Key
-
-# 3. 启动服务
+cp .env.example .env    # 填入 API Key
 uvicorn app.main:app --reload --port 8000
 ```
 
 ### 方式二：Docker 启动
 
 ```bash
-# 配置环境变量
-cp .env.example .env
-# 编辑 .env 填入你的 API Key
-
-# 启动服务 (含 Qdrant)
-docker-compose up -d
-
-# 仅启动应用 (使用 ChromaDB)
-docker-compose up app -d
-```
-
-### 方式三：Windows 启动
-
-```powershell
-# 使用 PowerShell 脚本
-.\scripts\start.ps1
+cp .env.example .env    # 填入 API Key
+docker-compose up -d    # 含 Qdrant 向量库
 ```
 
 启动后访问 **http://localhost:8000** 打开 Web 界面。
@@ -78,43 +89,38 @@ docker-compose up app -d
 
 ## API 接口
 
-### 问答接口
+| 接口 | 方法 | 说明 |
+|:---|:---:|:---|
+| `/chat` | POST | 问答接口 |
+| `/ingest` | POST | 批量入库（需 editor 权限） |
+| `/history/sessions` | GET | 会话历史查询 |
+| `/health` | GET | 健康检查 |
+
+<details>
+<summary>展开查看请求示例</summary>
 
 ```bash
+# 问答
 curl -X POST "http://localhost:8000/chat" \
   -H "Content-Type: application/json" \
-  -d '{"question": "你好，请问有什么可以帮助你？"}'
-```
+  -d '{"question": "采购流程的主要步骤有哪些？"}'
 
-### 批量入库
-
-```bash
+# 入库
 curl -X POST "http://localhost:8000/ingest" \
   -H "Content-Type: application/json" \
   -H "X-Role: editor" \
   -d '{"input_dir": "data/knowledge_base", "dry_run": false}'
-```
 
-### 会话历史
-
-```bash
+# 会话历史
 curl "http://localhost:8000/history/sessions?user_id=user1" \
   -H "X-User-ID: user1"
 ```
 
-### 健康检查
-
-```bash
-curl http://localhost:8000/health
-```
+</details>
 
 ---
 
 ## 批量入库
-
-### 导入文档
-
-将文件放入 `data/knowledge_base/` 目录，然后执行：
 
 ```bash
 # 预览变更（不写入）
@@ -122,12 +128,8 @@ python -m app.ingest.batch_ingest --dry-run
 
 # 执行入库
 python -m app.ingest.batch_ingest
-```
 
-### 重新索引
-
-```bash
-# 完全重建索引（启用 Contextual Enrichment 后需执行）
+# 完全重建索引
 python -m app.ingest.batch_ingest --full-reindex
 ```
 
@@ -135,67 +137,38 @@ python -m app.ingest.batch_ingest --full-reindex
 
 ## 核心配置
 
-### 基础配置
+<details>
+<summary><b>基础配置</b></summary>
 
 ```dotenv
-# 向量库模式
 RETRIEVER_MODE=chroma          # chroma | qdrant
-VECTOR_STORE_MODE=chroma
-VECTOR_STORE_COLLECTION=rag_kb_default
-CHROMA_PERSIST_DIR=data/vector_store/chroma
-
-# Embedding
-EMBEDDING_PROVIDER=openai
 EMBEDDING_MODEL=text-embedding-3-small
-
-# LLM
 LLM_MODEL=gpt-4o-mini
 ```
 
-### 高级 RAG 配置
+</details>
+
+<details>
+<summary><b>高级 RAG 配置</b></summary>
 
 ```dotenv
-# HyDE - 假设文档嵌入
-ENABLE_HYDE=true
-
-# CRAG - 矫正检索
-ENABLE_CRAG=true
-CRAG_MAX_RETRIES=1
-
-# MMR - 多样性检索
-ENABLE_MMR=true
-MMR_LAMBDA=0.5
-
-# Cross-Encoder 精排（需安装 sentence-transformers）
-ENABLE_CROSS_ENCODER_RERANKER=true
-CROSS_ENCODER_MODEL=BAAI/bge-reranker-v2-m3
-CROSS_ENCODER_TOP_N=5
+ENABLE_HYDE=true               # 假设文档嵌入
+ENABLE_CRAG=true               # 矫正检索
+ENABLE_MMR=true                # 多样性检索
+ENABLE_CROSS_ENCODER_RERANKER=true  # Cross-Encoder 精排
 ```
 
-### 入库配置
+</details>
+
+<details>
+<summary><b>企业级配置</b></summary>
 
 ```dotenv
-# 分块模式
-CHUNK_MODE=hybrid              # hybrid | sliding | parent_child
-INGEST_CHUNK_SIZE=800
-INGEST_CHUNK_OVERLAP=120
-
-# 去重阈值
-EMBEDDING_DEDUP_THRESHOLD=0.95
+RBAC_ENABLED=false             # RBAC 权限控制
+TENANT_ISOLATION_ENABLED=false  # 租户数据隔离
 ```
 
-### 企业级配置
-
-```dotenv
-# RBAC (Role-Based Access Control)
-RBAC_ENABLED=false              # 启用角色权限控制
-RBAC_DEFAULT_ROLE=viewer        # 默认角色: viewer | editor | admin
-RBAC_ADMIN_TOKEN=               # Admin Token (hmac.compare_digest)
-
-# 租户隔离
-TENANT_ISOLATION_ENABLED=false  # 启用租户数据隔离
-TENANT_ID=default               # 租户 ID (向量库前缀 + 会话过滤)
-```
+</details>
 
 完整配置请参考 [`.env.example`](.env.example)。
 
@@ -204,7 +177,7 @@ TENANT_ID=default               # 租户 ID (向量库前缀 + 会话过滤)
 ## 高级 RAG 功能
 
 <details>
-<summary><b>Contextual Chunk Enrichment</b> - 上下文增强分块</summary>
+<summary><b>Contextual Chunk Enrichment</b></summary>
 
 入库时自动为每个 chunk 注入文档标题和章节层级：
 
@@ -219,7 +192,7 @@ TENANT_ID=default               # 租户 ID (向量库前缀 + 会话过滤)
 </details>
 
 <details>
-<summary><b>Cross-Encoder Reranking</b> - 交叉编码器精排</summary>
+<summary><b>Cross-Encoder Reranking</b></summary>
 
 用 `BAAI/bge-reranker-v2-m3` 对检索结果做精排，MRR 提升 10-25%。
 
@@ -228,21 +201,21 @@ TENANT_ID=default               # 租户 ID (向量库前缀 + 会话过滤)
 </details>
 
 <details>
-<summary><b>HyDE</b> - 假设文档嵌入</summary>
+<summary><b>HyDE</b></summary>
 
 先用 LLM 生成假设文档再检索，弥合口语化查询与正式文档的词汇鸿沟。
 
 </details>
 
 <details>
-<summary><b>Reciprocal Rank Fusion</b> - 多路融合</summary>
+<summary><b>Reciprocal Rank Fusion</b></summary>
 
 多路查询（原始问题、改写问题、历史问题）结果自动融合排序，无需配置，默认开启。
 
 </details>
 
 <details>
-<summary><b>Embedding Near-Duplicate Detection</b> - 近似去重</summary>
+<summary><b>Embedding Near-Duplicate Detection</b></summary>
 
 入库时检测余弦相似度 > 0.95 的近似 chunk 并跳过，防止修订版文档污染索引。
 
@@ -253,59 +226,52 @@ TENANT_ID=default               # 租户 ID (向量库前缀 + 会话过滤)
 ## 架构概览
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         用户提问                             │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│              RBAC 权限校验 (admin/editor/viewer)              │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                租户隔离 (tenant_id 向量库 + DB)               │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   敏感词过滤（归一化匹配）                     │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                历史对话改写（LLM + TTL 缓存）                 │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  查询改写（规则/LLM/Noop）                    │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                多路并行检索 + RRF 融合                        │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐        │
-│  │  HyDE   │  │  CRAG   │  │   MMR   │  │Cross-Enc│        │
-│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘        │
-│       └────────────┴───────────┴────────────┘              │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                Parent Chunk 扩展 + 结构化输出                 │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                  LLM 生成回答 + 文档引用                      │
-└─────────────────────────────┬───────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    RAG 评估 (eval/run.py)                    │
-│         关键词覆盖 + 上下文相关度 + 延迟统计                   │
-└─────────────────────────────────────────────────────────────┘
+                        ┌─────────────────┐
+                        │    用户提问     │
+                        └────────┬────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   RBAC 权限校验          │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   租户数据隔离           │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   敏感词过滤             │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   历史对话改写           │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   查询改写               │
+                    └────────────┬────────────┘
+                                 │
+         ┌───────────┬───────────┼───────────┐
+         ▼           ▼           ▼           ▼
+    ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐
+    │  HyDE   │ │  CRAG   │ │   MMR   │ │Cross-Enc│
+    └────┬────┘ └────┬────┘ └────┬────┘ └────┬────┘
+         └──────────┴───────────┴──────────┘
+                         │
+              ┌──────────▼──────────┐
+              │   RRF 融合排序       │
+              └──────────┬──────────┘
+                         │
+              ┌──────────▼──────────┐
+              │  Parent Chunk 扩展   │
+              └──────────┬──────────┘
+                         │
+              ┌──────────▼──────────┐
+              │  LLM 生成 + 引用    │
+              └──────────┬──────────┘
+                         │
+              ┌──────────▼──────────┐
+              │  RAG 评估           │
+              └─────────────────────┘
 ```
 
 ---
@@ -314,65 +280,26 @@ TENANT_ID=default               # 租户 ID (向量库前缀 + 会话过滤)
 
 ```
 app/
-├── main.py                     # FastAPI 入口
-├── config.py                   # 配置管理 (pydantic-settings)
-├── llm_client.py               # LLM 调用（带重试）
-├── prompts.py                  # 系统提示词 + 输出格式检测
-├── schemas.py                  # 请求/响应模型
-├── utils.py                    # 共享工具函数
+├── main.py                 # FastAPI 入口
+├── config.py               # 配置管理 (pydantic-settings)
+├── llm_client.py           # LLM 调用（带重试）
+├── prompts.py              # 系统提示词 + 输出格式检测
+├── schemas.py              # 请求/响应模型
+├── utils.py                # 共享工具函数
 │
-├── api/routers/
-│   ├── chat.py                 # POST /chat + 微信适配
-│   ├── history.py              # 会话历史查询
-│   ├── ingest.py               # POST /ingest 批量入库 (RBAC)
-│   ├── system.py               # 健康检查
-│   └── web.py                  # 测试页面
-│
-├── bootstrap/
-│   └── rag_factory.py          # RAG 管线组装
-│
-├── ingest/
-│   ├── batch_ingest.py         # 批量入库 CLI
-│   ├── chunker.py              # 混合/滑动/父子分块
-│   ├── document_loader.py      # 多格式文档读取
-│   ├── embedders.py            # Embedding 客户端
-│   ├── manifest.py             # 增量入库清单
-│   └── vector_store/           # 向量存储适配器 (tenant_id 前缀)
-│
-├── retrievers/
-│   ├── base.py                 # BaseRetriever ABC
-│   ├── chroma_retriever.py     # ChromaDB 检索 (tenant_id 前缀)
-│   ├── qdrant_retriever.py     # Qdrant 检索 (tenant_id 前缀)
-│   ├── mmr.py                  # MMR 多样性
-│   ├── crag.py                 # CRAG 矫正
-│   ├── cross_encoder_reranker.py  # Cross-Encoder 精排
-│   └── hyde_retriever.py       # HyDE 假设文档
-│
-├── security/
-│   ├── sensitive.py            # 敏感词过滤
-│   └── rbac.py                 # RBAC 权限中间件
-│
-├── services/
-│   ├── langchain_rag_service.py   # 核心 RAG 编排
-│   └── flow_enumerator.py         # 流程枚举
-│
-├── history/                    # SQLite 会话管理 (tenant_id 列)
-├── query_rewrite/              # 查询改写模块
-├── integrations/               # 企业微信适配
-└── web/                        # 前端页面
+├── api/routers/            # HTTP 接入层
+├── bootstrap/              # RAG 管线组装
+├── ingest/                 # 文档入库管线
+├── retrievers/             # 检索器抽象层
+├── security/               # 敏感词 + RBAC
+├── services/               # 核心 RAG 编排
+├── history/                # SQLite 会话管理
+├── query_rewrite/          # 查询改写模块
+├── integrations/           # 企业微信适配
+└── web/                    # 前端页面
 
-eval/
-├── qa_pairs.json               # 25 条 QA 评估集
-└── run.py                      # 评估脚本
-
-tests/                          # 单元测试 (93 passing)
-├── test_config.py              # 配置校验
-├── test_schemas.py             # 模型校验
-├── test_utils.py               # 工具函数
-├── test_sensitive.py           # 敏感词过滤
-├── test_query_rewrite.py       # 查询改写
-├── test_flow_enumerator.py     # 流程枚举
-└── test_manifest.py            # 入库清单
+eval/                       # RAG 评估
+tests/                      # 单元测试 (93 passing)
 ```
 
 ---
@@ -383,7 +310,7 @@ tests/                          # 单元测试 (93 passing)
 |:---:|:---:|:---|
 | 文本文件 | `.txt` `.md` `.csv` `.log` | 自动检测编码 |
 | PDF | `.pdf` | 文本提取 + OCR 兜底 |
-| Word | `.doc` `.docx` | .doc 需 LibreOffice 或 antiword |
+| Word | `.doc` `.docx` | .doc 需 LibreOffice |
 | Excel | `.xlsx` | 自动读取所有 Sheet |
 | JSON | `.json` | 格式化输出 |
 
@@ -392,14 +319,9 @@ tests/                          # 单元测试 (93 passing)
 ## 测试
 
 ```bash
-# 运行全部测试
-python -m pytest tests/ -v
-
-# 运行特定模块测试
-python -m pytest tests/test_utils.py -v
-
-# 生成覆盖率报告
-python -m pytest tests/ --cov=app --cov-report=term-missing
+python -m pytest tests/ -v                    # 运行全部测试
+python -m pytest tests/test_utils.py -v      # 运行特定模块
+python -m pytest tests/ --cov=app            # 覆盖率报告
 ```
 
 ---
@@ -407,17 +329,10 @@ python -m pytest tests/ --cov=app --cov-report=term-missing
 ## RAG 评估
 
 ```bash
-# 运行评估脚本
 python eval/run.py --api-url http://localhost:8000
-
-# 输出结果
-eval/results.json
 ```
 
-评估指标：
-- **关键词覆盖** - 回答是否包含预期关键词
-- **上下文相关度** - 回答与检索文档的重叠度
-- **响应延迟** - 端到端请求耗时
+评估指标：关键词覆盖 · 上下文相关度 · 响应延迟
 
 ---
 
