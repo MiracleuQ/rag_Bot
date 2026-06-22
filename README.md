@@ -4,6 +4,8 @@
 
 **企业级 RAG 服务 | LangChain + Chroma/Qdrant**
 
+[![CI](https://img.shields.io/github/actions/workflow/status/MiracleuQ/rag_Bot/ci.yml?branch=master&label=CI)](https://github.com/MiracleuQ/rag_Bot/actions)
+[![Tests](https://img.shields.io/badge/tests-93%20passing-brightgreen)](https://github.com/MiracleuQ/rag_Bot)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![LangChain](https://img.shields.io/badge/LangChain-LCEL-000000?style=flat)](https://python.langchain.com/)
@@ -26,6 +28,9 @@
 | **会话管理** | SQLite 持久化，支持多轮对话历史 |
 | **查询改写** | 规则 / LLM / Noop 三种模式，带 TTL 缓存 |
 | **安全过滤** | 敏感词归一化匹配，防止信息泄露 |
+| **RBAC 权限** | admin / editor / viewer 三角色权限控制 |
+| **租户隔离** | 向量库 + 会话数据按 tenant_id 隔离 |
+| **RAG 评估** | 25 条 QA 评估集，计算关键词覆盖 + 上下文相关度 |
 | **Web 界面** | 深色主题聊天 UI，支持 Markdown 渲染 |
 
 ---
@@ -160,6 +165,19 @@ INGEST_CHUNK_OVERLAP=120
 EMBEDDING_DEDUP_THRESHOLD=0.95
 ```
 
+### 企业级配置
+
+```dotenv
+# RBAC (Role-Based Access Control)
+RBAC_ENABLED=false              # 启用角色权限控制
+RBAC_DEFAULT_ROLE=viewer        # 默认角色: viewer | editor | admin
+RBAC_ADMIN_TOKEN=               # Admin Token (hmac.compare_digest)
+
+# 租户隔离
+TENANT_ISOLATION_ENABLED=false  # 启用租户数据隔离
+TENANT_ID=default               # 租户 ID (向量库前缀 + 会话过滤)
+```
+
 完整配置请参考 [`.env.example`](.env.example)。
 
 ---
@@ -222,6 +240,16 @@ EMBEDDING_DEDUP_THRESHOLD=0.95
                           │
                           ▼
 ┌─────────────────────────────────────────────────────────┐
+│           RBAC 权限校验 (admin/editor/viewer)             │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│              租户隔离 (tenant_id 向量库 + DB)              │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
 │                 敏感词过滤（归一化匹配）                   │
 └─────────────────────────┬───────────────────────────────┘
                           │
@@ -252,6 +280,12 @@ EMBEDDING_DEDUP_THRESHOLD=0.95
                           ▼
 ┌─────────────────────────────────────────────────────────┐
 │                LLM 生成回答 + 文档引用                    │
+└─────────────────────────┬───────────────────────────────┘
+                          │
+                          ▼
+┌─────────────────────────────────────────────────────────┐
+│                  RAG 评估 (eval/run.py)                  │
+│       关键词覆盖 + 上下文相关度 + 延迟统计                 │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -271,6 +305,7 @@ app/
 ├── api/routers/
 │   ├── chat.py                 # POST /chat + 微信适配
 │   ├── history.py              # 会话历史查询
+│   ├── ingest.py               # POST /ingest 批量入库 (RBAC)
 │   ├── system.py               # 健康检查
 │   └── web.py                  # 测试页面
 │
@@ -283,26 +318,33 @@ app/
 │   ├── document_loader.py      # 多格式文档读取
 │   ├── embedders.py            # Embedding 客户端
 │   ├── manifest.py             # 增量入库清单
-│   └── vector_store/           # 向量存储适配器
+│   └── vector_store/           # 向量存储适配器 (tenant_id 前缀)
 │
 ├── retrievers/
 │   ├── base.py                 # BaseRetriever ABC
-│   ├── chroma_retriever.py     # ChromaDB 检索
-│   ├── qdrant_retriever.py     # Qdrant 检索
+│   ├── chroma_retriever.py     # ChromaDB 检索 (tenant_id 前缀)
+│   ├── qdrant_retriever.py     # Qdrant 检索 (tenant_id 前缀)
 │   ├── mmr.py                  # MMR 多样性
 │   ├── crag.py                 # CRAG 矫正
 │   ├── cross_encoder_reranker.py  # Cross-Encoder 精排
 │   └── hyde_retriever.py       # HyDE 假设文档
 │
+├── security/
+│   ├── sensitive.py            # 敏感词过滤
+│   └── rbac.py                 # RBAC 权限中间件
+│
 ├── services/
 │   ├── langchain_rag_service.py   # 核心 RAG 编排
 │   └── flow_enumerator.py         # 流程枚举
 │
-├── history/                    # SQLite 会话管理
-├── security/                   # 敏感词过滤
+├── history/                    # SQLite 会话管理 (tenant_id 列)
 ├── query_rewrite/              # 查询改写模块
 ├── integrations/               # 企业微信适配
 └── web/                        # 前端页面
+
+eval/
+├── qa_pairs.json               # 25 条 QA 评估集
+└── run.py                      # 评估脚本 (keyword coverage + context relevance)
 ```
 
 ---

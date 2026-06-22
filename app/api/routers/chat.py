@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from app.history.session_service import HistorySessionService
 from app.integrations.wechat_adapter import WeChatMessageAdapter
 from app.schemas import ChatRequest, ChatResponse, WeChatAdapterRequest, WeChatAdapterResponse
+from app.security.rbac import require_permission
 from app.services import LangChainRAGService
 
 logger = logging.getLogger(__name__)
@@ -47,8 +48,11 @@ def create_chat_router(
     router = APIRouter()
 
     @router.post("/chat", response_model=ChatResponse)
-    def chat(req: ChatRequest) -> ChatResponse:
-        logger.info("Chat request: session=%s user=%s question=%s", req.session_id, req.user_id, req.question[:50])
+    def chat(
+        req: ChatRequest,
+        ctx=require_permission("chat", "read"),
+    ) -> ChatResponse:
+        logger.info("Chat request: session=%s user=%s question=%s role=%s", req.session_id, req.user_id, req.question[:50], ctx.role)
         try:
             result, session_id = _handle_chat(
                 rag_service=rag_service,

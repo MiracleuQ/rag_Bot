@@ -26,6 +26,8 @@ class QdrantRetriever(BaseRetriever):
         self._embedder = embedder
         self._client = QdrantClient(**client_args)
         self._collection = settings.vector_store_collection
+        if settings.tenant_isolation_enabled and settings.tenant_id:
+            self._collection = f"{settings.tenant_id}_{self._collection}"
         self._collection_exists_cached: bool | None = None
 
     def _collection_exists(self) -> bool:

@@ -92,6 +92,15 @@ class Settings(BaseSettings):
 
     allow_cors_origins: List[str] = Field(default_factory=lambda: ["*"])
 
+    # RBAC (Role-Based Access Control)
+    rbac_enabled: bool = False
+    rbac_default_role: str = "viewer"
+    rbac_admin_token: str = ""
+
+    # Tenant isolation
+    tenant_isolation_enabled: bool = False
+    tenant_id: str = "default"
+
     # Reserved for enterprise WeChat adapter
     wechat_token: str = ""
     wechat_aes_key: str = ""

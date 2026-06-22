@@ -1,0 +1,181 @@
+{
+  "version": "1.0",
+  "description": "RAG evaluation dataset for quality metrics",
+  "qa_pairs": [
+    {
+      "id": "qa-001",
+      "question": "采购流程的主要步骤有哪些？",
+      "expected_keywords": ["需求确认", "供应商", "比价", "合同", "验收"],
+      "difficulty": "easy",
+      "category": "process"
+    },
+    {
+      "id": "qa-002",
+      "question": "供应商准入需要满足什么条件？",
+      "expected_keywords": ["资质", "审核", "评估", "准入"],
+      "difficulty": "medium",
+      "category": "policy"
+    },
+    {
+      "id": "qa-003",
+      "question": "合同签署的审批流程是什么？",
+      "expected_keywords": ["审批", "签字", "盖章", "法务"],
+      "difficulty": "medium",
+      "category": "process"
+    },
+    {
+      "id": "qa-004",
+      "question": "付款方式有哪些？",
+      "expected_keywords": ["预付款", "分期", "货到付款", "账期"],
+      "difficulty": "easy",
+      "category": "finance"
+    },
+    {
+      "id": "qa-005",
+      "question": "如何处理供应商质量问题？",
+      "expected_keywords": ["退换货", "索赔", "整改", "质量"],
+      "difficulty": "medium",
+      "category": "quality"
+    },
+    {
+      "id": "qa-006",
+      "question": "采购订单的审批权限是如何划分的？",
+      "expected_keywords": ["金额", "审批", "权限", "分级"],
+      "difficulty": "hard",
+      "category": "policy"
+    },
+    {
+      "id": "qa-007",
+      "question": "库存管理的基本原则是什么？",
+      "expected_keywords": ["库存", "周转", "安全库存", "盘点"],
+      "difficulty": "easy",
+      "category": "inventory"
+    },
+    {
+      "id": "qa-008",
+      "question": "如何进行供应商绩效评估？",
+      "expected_keywords": ["评估", "指标", "绩效", "考核"],
+      "difficulty": "medium",
+      "category": "supplier"
+    },
+    {
+      "id": "qa-009",
+      "question": "紧急采购的处理流程是什么？",
+      "expected_keywords": ["紧急", "加急", "审批", "特殊"],
+      "difficulty": "medium",
+      "category": "process"
+    },
+    {
+      "id": "qa-010",
+      "question": "采购预算的编制方法有哪些？",
+      "expected_keywords": ["预算", "编制", "成本", "计划"],
+      "difficulty": "hard",
+      "category": "finance"
+    },
+    {
+      "id": "qa-011",
+      "question": "招标文件的组成要素有哪些？",
+      "expected_keywords": ["招标", "文件", "技术要求", "商务条款"],
+      "difficulty": "hard",
+      "category": "bidding"
+    },
+    {
+      "id": "qa-012",
+      "question": "如何进行采购风险控制？",
+      "expected_keywords": ["风险", "控制", "预防", "措施"],
+      "difficulty": "medium",
+      "category": "risk"
+    },
+    {
+      "id": "qa-013",
+      "question": "退货流程的具体步骤是什么？",
+      "expected_keywords": ["退货", "申请", "审批", "退款"],
+      "difficulty": "easy",
+      "category": "return"
+    },
+    {
+      "id": "qa-014",
+      "question": "采购数据分析的关键指标有哪些？",
+      "expected_keywords": ["数据", "分析", "指标", "报表"],
+      "difficulty": "hard",
+      "category": "analytics"
+    },
+    {
+      "id": "qa-015",
+      "question": "供应商评价体系包含哪些维度？",
+      "expected_keywords": ["质量", "价格", "交期", "服务"],
+      "difficulty": "medium",
+      "category": "supplier"
+    },
+    {
+      "id": "qa-016",
+      "question": "采购合同的主要条款有哪些？",
+      "expected_keywords": ["合同", "条款", "价格", "交付"],
+      "difficulty": "easy",
+      "category": "contract"
+    },
+    {
+      "id": "qa-017",
+      "question": "如何选择合适的采购方式？",
+      "expected_keywords": ["采购方式", "公开招标", "竞争性谈判", "询价"],
+      "difficulty": "medium",
+      "category": "process"
+    },
+    {
+      "id": "qa-018",
+      "question": "采购数据分析的关键指标有哪些？",
+      "expected_keywords": ["采购成本", "供应商绩效", "库存周转率"],
+      "difficulty": "hard",
+      "category": "analytics"
+    },
+    {
+      "id": "qa-019",
+      "question": "采购审计的主要内容是什么？",
+      "expected_keywords": ["审计", "合规", "流程", "风险"],
+      "difficulty": "hard",
+      "category": "audit"
+    },
+    {
+      "id": "qa-020",
+      "question": "如何建立供应商档案？",
+      "expected_keywords": ["档案", "信息", "管理", "更新"],
+      "difficulty": "easy",
+      "category": "supplier"
+    },
+    {
+      "id": "qa-021",
+      "question": "采购成本控制的方法有哪些？",
+      "expected_keywords": ["成本", "控制", "议价", "替代"],
+      "difficulty": "medium",
+      "category": "finance"
+    },
+    {
+      "id": "qa-022",
+      "question": "采购质量检验的标准是什么？",
+      "expected_keywords": ["检验", "标准", "抽样", "合格"],
+      "difficulty": "medium",
+      "category": "quality"
+    },
+    {
+      "id": "qa-023",
+      "question": "如何处理采购中的腐败行为？",
+      "expected_keywords": ["反腐", "举报", "监督", "处罚"],
+      "difficulty": "hard",
+      "category": "ethics"
+    },
+    {
+      "id": "qa-024",
+      "question": "采购信息系统的主要功能有哪些？",
+      "expected_keywords": ["系统", "功能", "流程", "管理"],
+      "difficulty": "easy",
+      "category": "system"
+    },
+    {
+      "id": "qa-025",
+      "question": "如何评估采购团队的绩效？",
+      "expected_keywords": ["绩效", "评估", "团队", "指标"],
+      "difficulty": "medium",
+      "category": "hr"
+    }
+  ]
+}

@@ -13,10 +13,11 @@ def _utc_now() -> str:
 
 
 class ChatHistoryStore:
-    def __init__(self, db_path: str):
+    def __init__(self, db_path: str, tenant_id: str = ""):
         self._db_path = Path(db_path)
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         self._write_lock = threading.Lock()
+        self._tenant_id = tenant_id
 
     @contextmanager
     def _connect(self):
@@ -37,6 +38,7 @@ class ChatHistoryStore:
                 CREATE TABLE IF NOT EXISTS sessions (
                     session_id TEXT PRIMARY KEY,
                     user_id TEXT,
+                    tenant_id TEXT NOT NULL DEFAULT '',
                     channel TEXT NOT NULL DEFAULT 'api',
                     title TEXT,
                     created_at TEXT NOT NULL,
@@ -63,6 +65,9 @@ class ChatHistoryStore:
                 "CREATE INDEX IF NOT EXISTS idx_sessions_user_updated ON sessions(user_id, updated_at DESC)"
             )
             conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_tenant ON sessions(tenant_id)"
+            )
+            conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_messages_session_created ON messages(session_id, created_at ASC)"
             )
             conn.commit()
@@ -79,6 +84,7 @@ class ChatHistoryStore:
         now = _utc_now()
         title = title_seed.strip()[:80] if title_seed else None
         metadata_json = json.dumps(metadata or {}, ensure_ascii=False)
+        tenant_id = self._tenant_id
 
         with self._write_lock:
             with self._connect() as conn:
@@ -101,10 +107,10 @@ class ChatHistoryStore:
                     conn.execute(
                         """
                         INSERT INTO sessions
-                        (session_id, user_id, channel, title, created_at, updated_at, metadata_json)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        (session_id, user_id, tenant_id, channel, title, created_at, updated_at, metadata_json)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """,
-                        (sid, user_id, channel, title, now, now, metadata_json),
+                        (sid, user_id, tenant_id, channel, title, now, now, metadata_json),
                     )
                 conn.commit()
         return sid
@@ -156,6 +162,9 @@ class ChatHistoryStore:
         cap = max(1, min(limit, 200))
         where = []
         params: List[Any] = []
+        if self._tenant_id:
+            where.append("tenant_id = ?")
+            params.append(self._tenant_id)
         if user_id:
             where.append("user_id = ?")
             params.append(user_id)

@@ -24,6 +24,8 @@ class QdrantVectorStore(BaseVectorStore):
         self._client = QdrantClient(**client_args)
         self._models = models
         self._collection = settings.vector_store_collection
+        if settings.tenant_isolation_enabled and settings.tenant_id:
+            self._collection = f"{settings.tenant_id}_{self._collection}"
         self._collection_checked = False
 
     def _collection_exists(self) -> bool:

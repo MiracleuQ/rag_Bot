@@ -17,8 +17,11 @@ class ChromaVectorStore(BaseVectorStore):
         persist_dir.mkdir(parents=True, exist_ok=True)
 
         self._client = chromadb.PersistentClient(path=str(persist_dir))
+        collection_name = settings.vector_store_collection
+        if settings.tenant_isolation_enabled and settings.tenant_id:
+            collection_name = f"{settings.tenant_id}_{collection_name}"
         self._collection = self._client.get_or_create_collection(
-            name=settings.vector_store_collection,
+            name=collection_name,
             metadata={"hnsw:space": "cosine"},
         )
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Header, Query
 
 from app.history.session_service import HistorySessionService
 from app.schemas import MessageRecord, SessionRecord
+from app.security.rbac import require_permission
 
 
 def create_history_router(history_service: HistorySessionService) -> APIRouter:
@@ -16,6 +17,7 @@ def create_history_router(history_service: HistorySessionService) -> APIRouter:
         limit: int = Query(default=20, ge=1, le=200),
         x_user_id: Optional[str] = Header(default=None, alias="X-User-ID"),
         x_history_admin_token: Optional[str] = Header(default=None, alias="X-History-Admin-Token"),
+        ctx=require_permission("history", "read_own"),
     ) -> List[SessionRecord]:
         history_service.assert_history_enabled()
         scope_user_id = history_service.resolve_history_scope_user(

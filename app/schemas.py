@@ -55,3 +55,25 @@ class MessageRecord(BaseModel):
     content: str
     used_docs: List[Document] = Field(default_factory=list)
     created_at: str
+
+
+class IngestRequest(BaseModel):
+    input_dir: Optional[str] = Field(default=None, description="Knowledge base folder path. Defaults to KNOWLEDGE_BASE_DIR.")
+    dry_run: bool = Field(default=False, description="Scan and plan only, no write.")
+    full_reindex: bool = Field(default=False, description="Ignore incremental diff and rebuild all vectors.")
+
+
+class IngestResponse(BaseModel):
+    kb_dir: str
+    document_count: int
+    changed_document_count: int
+    skipped_document_count: int
+    removed_document_count: int
+    chunk_count: int
+    delete_count: int
+    vector_count: int
+    duplicate_count: int
+    dry_run: bool
+    full_reindex: bool
+    incremental_enabled: bool
+    manifest_path: str

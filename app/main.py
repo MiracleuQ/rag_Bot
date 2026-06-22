@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routers import create_chat_router, create_history_router, create_system_router, create_web_router
+from app.api.routers import create_chat_router, create_history_router, create_ingest_router, create_system_router, create_web_router
 from app.bootstrap import build_rag_service
 from app.config import get_settings
 from app.history import ChatHistoryStore
@@ -30,7 +30,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    history_store = ChatHistoryStore(settings.chat_history_db_path)
+    history_store = ChatHistoryStore(
+        settings.chat_history_db_path,
+        tenant_id=settings.tenant_id if settings.tenant_isolation_enabled else "",
+    )
     history_store.init_db()
     history_service = HistorySessionService(settings=settings, history_store=history_store)
     rag_service = build_rag_service(settings=settings)
@@ -48,6 +51,7 @@ def create_app() -> FastAPI:
             history_service=history_service,
         )
     )
+    app.include_router(create_ingest_router())
     return app
 
 
