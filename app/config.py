@@ -90,7 +90,7 @@ class Settings(BaseSettings):
     qdrant_api_key: str = ""
     qdrant_timeout_sec: int = 30
 
-    allow_cors_origins: List[str] = Field(default_factory=lambda: ["*"])
+    allow_cors_origins: List[str] = Field(default_factory=list)
 
     # RBAC (Role-Based Access Control)
     rbac_enabled: bool = False
